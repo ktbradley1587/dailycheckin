@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Check In - Health Tracker</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+                sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        /* Custom toggle switch styling */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 80px;
+            height: 48px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #d1d5db;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 40px;
+            width: 40px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        input:checked + .slider {
+            background-color: currentColor;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(32px);
+        }
+        
+        /* Loading spinner */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { createRoot } = ReactDOM;
+
+        // Google Apps Script URL - ALREADY CONFIGURED
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwEC_Z16nD1OaCMIfjCh9V1dbo39W7an-2a_uQcKWdHRho1XsGIPXw88vqpY3qkAYc5_aw/exec';
+
+        // Lucide Icons Component Wrappers
+        const Icon = ({ name, ...props }) => {
+            useEffect(() => {
+                lucide.createIcons();
+            });
+            return React.createElement('i', { 'data-lucide': name, ...props });
+        };
+
+        const Heart = (props) => <Icon name="heart" {...props} />;
+        const Activity = (props) => <Icon name="activity" {...props} />;
+        const Droplet = (props) => <Icon name="droplet" {...props} />;
+        const Moon = (props) => <Icon name="moon" {...props} />;
+        const Brain = (props) => <Icon name="brain" {...props} />;
+        const Pill = (props) => <Icon name="pill" {...props} />;
+        const Phone = (props) => <Icon name="phone" {...props} />;
+        const AlertTriangle = (props) => <Icon name="alert-triangle" {...props} />;
+        const Users = (props) => <Icon name="users" {...props} />;
+        const Wind = (props) => <Icon name="wind" {...props} />;
+        const Zap = (props) => <Icon name="zap" {...props} />;
+        const Smile = (props) => <Icon name="smile" {...props} />;
+
+        function HealthTracker() {
+            const [currentView, setCurrentView] = useState('mood');
+            const [entries, setEntries] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+            const [alertConditions, setAlertConditions] = useState({
+                bp: false,
+                uti: false,
+                balance: false,
+                cognitive: false,
+                pain: false,
+                dehydration: false
+            });
+            const [currentEntry, setCurrentEntry] = useState({
+                date: new Date().toISOString(),
+                mood: '',
+                bloodPressureSystolic: '',
+                bloodPressureDiastolic: '',
+                utiScore: '',
+                waterIntake: '',
+                totalSleep: '',
+                deepSleep: '',
+                remSleep: '',
+                lightSleep: '',
+                hrv: '',
+                meditated: false,
+                tookMeds: false,
+                socialConnection: false,
+                bowelMovement: false,
+                timeOutside: '',
+                headache: 'none',
+                balanceIssues: false,
+                cognitiveClarity: 'clear',
+                painLevel: '',
+                positiveActivity: '',
+            });
+
+            // Load data from Google Sheets when component mounts
+            useEffect(() => {
+                loadEntriesFromSheets();
+            }, []);
+
+            // Function to load all entries from Google Sheets
+            const loadEntriesFromSheets = async () => {
+                try {
+                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            action: 'load'
+                        }),
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.status === 'success' && data.entries) {
+                        setEntries(data.entries);
+                    }
+                } catch (error) {
+                    console.error('Error loading entries:', error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            // Function to save an entry to Google Sheets
+            const saveEntryToSheets = async (entry) => {
+                try {
+                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            action: 'save',
+                            entry: entry
+                        }),
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.status === 'success') {
+                        console.log('Entry saved successfully');
+                    }
+                } catch (error) {
+                    console.error('Error saving entry:', error);
+                }
+            };
+
+            const handleMoodSelection = (mood) => {
+                setCurrentEntry({ ...currentEntry, mood });
+                if (mood === 'rough') {
+                    setCurrentView('tracking');
+                } else {
+                    // Save simple entry and show success
+                    const newEntry = { ...currentEntry, mood };
+                    setEntries([...entries, newEntry]);
+                    
+                    // Save to Google Sheets
+                    saveEntryToSheets(newEntry);
+                    
+                    setCurrentView('success');
+                    setTimeout(() => {
+                        resetForm();
+                    }, 2000);
+                }
+            };
+
+            const checkHealthAlerts = () => {
+                const systolic = parseInt(currentEntry.bloodPressureSystolic);
+                const diastolic = parseInt(currentEntry.bloodPressureDiastolic);
+                const bpElevated = systolic > 140 || diastolic > 80;
+                const utiElevated = currentEntry.utiScore === 'elevated';
+                const balanceIssue = currentEntry.balanceIssues === true;
+                const cognitiveIssue = currentEntry.cognitiveClarity === 'somewhat foggy' || 
+                                      currentEntry.cognitiveClarity === 'very foggy';
+                const painHigh = parseInt(currentEntry.painLevel) > 5;
+                const dehydrated = currentEntry.waterIntake && parseInt(currentEntry.waterIntake) < 60;
+
+                const conditions = {
+                    bp: bpElevated,
+                    uti: utiElevated,
+                    balance: balanceIssue,
+                    cognitive: cognitiveIssue,
+                    pain: painHigh,
+                    dehydration: dehydrated
+                };
+
+                setAlertConditions(conditions);
+
+                // Return true if any condition is met
+                return bpElevated || utiElevated || balanceIssue || cognitiveIssue || painHigh || dehydrated;
+            };
+
+            const getLastBowelMovementInfo = () => {
+                // Look through entries from most recent to oldest
+                for (let i = entries.length - 1; i >= 0; i--) {
+                    if (entries[i].bowelMovement === true) {
+                        const lastDate = new Date(entries[i].date);
+                        const today = new Date();
+                        const daysDiff = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
+                        
+                        if (daysDiff === 0) return "earlier today";
+                        if (daysDiff === 1) return "yesterday";
+                        return `${daysDiff} days ago`;
+                    }
+                }
+                return "no recent record";
+            };
+
+            const handleInputChange = (field, value) => {
+                setCurrentEntry({ ...currentEntry, [field]: value });
+            };
+
+            const handleSubmit = () => {
+                if (checkHealthAlerts()) {
+                    setCurrentView('alert');
+                } else {
+                    const updatedEntries = [...entries, currentEntry];
+                    setEntries(updatedEntries);
+                    
+                    // Save to Google Sheets
+                    saveEntryToSheets(currentEntry);
+                    
+                    setCurrentView('success');
+                    setTimeout(() => {
+                        resetForm();
+                    }, 2000);
+                }
+            };
+
+            const handleAlertAcknowledge = () => {
+                // Save the entry even with alerts
+                const updatedEntries = [...entries, currentEntry];
+                setEntries(updatedEntries);
+                
+                // Save to Google Sheets
+                saveEntryToSheets(currentEntry);
+                
+                setCurrentView('success');
+                setTimeout(() => {
+                    resetForm();
+                }, 2000);
+            };
+
+            const resetForm = () => {
+                setCurrentEntry({
+                    date: new Date().toISOString(),
+                    mood: '',
+                    bloodPressureSystolic: '',
+                    bloodPressureDiastolic: '',
+                    utiScore: '',
+                    waterIntake: '',
+                    totalSleep: '',
+                    deepSleep: '',
+                    remSleep: '',
+                    lightSleep: '',
+                    hrv: '',
+                    meditated: false,
+                    tookMeds: false,
+                    socialConnection: false,
+                    bowelMovement: false,
+                    timeOutside: '',
+                    headache: 'none',
+                    balanceIssues: false,
+                    cognitiveClarity: 'clear',
+                    painLevel: '',
+                    positiveActivity: '',
+                });
+                setAlertConditions({
+                    bp: false,
+                    uti: false,
+                    balance: false,
+                    cognitive: false,
+                    pain: false,
+                    dehydration: false
+                });
+                setCurrentView('mood');
+            };
+
+            const viewHistory = () => {
+                setCurrentView('history');
+            };
+
+            const formatDate = (dateString) => {
+                const date = new Date(dateString);
+                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-b from-blue-50 to-purple-50 p-4 md:p-8">
+                    <div className="max-w-2xl mx-auto">
+                        {/* Branding Header */}
+                        <div className="text-center mb-6">
+                            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                                Daily Check In
+                            </h1>
+                            <p className="text-lg text-gray-600">dailycheckin.care</p>
+                        </div>
+                        
+                        <div className="bg-white rounded-3xl shadow-xl p-8 md:p-12">
+                            
+                            {/* Mood Check View */}
+                            {currentView === 'mood' && (
+                                <div className="text-center space-y-8">
+                                    <Heart className="w-20 h-20 mx-auto text-pink-400" />
+                                    <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-8">
+                                        How am I feeling mentally today?
+                                    </h1>
+                                    
+                                    {isLoading ? (
+                                        <div className="text-2xl text-gray-600">
+                                            <div className="spinner"></div>
+                                            <p className="mt-4">Loading your history...</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="space-y-4">
+                                                <button
+                                                    onClick={() => handleMoodSelection('good')}
+                                                    className="w-full py-6 px-8 bg-green-500 hover:bg-green-600 text-white text-2xl rounded-2xl shadow-lg transition-all transform hover:scale-105"
+                                                >
+                                                    😊 Feeling Good
+                                                </button>
+                                                <button
+                                                    onClick={() => handleMoodSelection('okay')}
+                                                    className="w-full py-6 px-8 bg-yellow-400 hover:bg-yellow-500 text-white text-2xl rounded-2xl shadow-lg transition-all transform hover:scale-105"
+                                                >
+                                                    😐 Okay
+                                                </button>
+                                                <button
+                                                    onClick={() => handleMoodSelection('rough')}
+                                                    className="w-full py-6 px-8 bg-orange-500 hover:bg-orange-600 text-white text-2xl rounded-2xl shadow-lg transition-all transform hover:scale-105"
+                                                >
+                                                    😔 Having a Rough Day
+                                                </button>
+                                            </div>
+                                            {entries.length > 0 && (
+                                                <button
+                                                    onClick={viewHistory}
+                                                    className="mt-8 text-blue-600 hover:text-blue-800 text-lg underline"
+                                                >
+                                                    View Past Entries ({entries.length})
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Detailed Tracking View */}
+                            {currentView === 'tracking' && (
+                                <div className="space-y-8">
+                                    <div className="text-center mb-8">
+                                        <h2 className="text-3xl font-bold text-gray-800 mb-2">
+                                            Let's check a few things
+                                        </h2>
+                                        <p className="text-xl text-gray-600">Taking care of yourself is important</p>
+                                    </div>
+
+                                    {/* Blood Pressure */}
+                                    <div className="bg-red-50 p-6 rounded-2xl">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <Activity className="w-8 h-8 text-red-500" />
+                                            <label className="text-2xl font-semibold text-gray-800">Blood Pressure</label>
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <input
+                                                type="number"
+                                                placeholder="Systolic (top)"
+                                                value={currentEntry.bloodPressureSystolic}
+                                                onChange={(e) => handleInputChange('bloodPressureSystolic', e.target.value)}
+                                                className="flex-1 p-4 text-xl border-2 border-gray-300 rounded-xl focus:border-red-400 focus:outline-none"
+                                            />
+                                            <span className="text-3xl font-bold text-gray-400 self-center">/</span>
+                                            <input
+                                                type="number"
+                                                placeholder="Diastolic (bottom)"
+                                                value={currentEntry.bloodPressureDiastolic}
+                                                onChange={(e) => handleInputChange('bloodPressureDiastolic', e.target.value)}
+                                                className="flex-1 p-4 text-xl border-2 border-gray-300 rounded-xl focus:border-red-400 focus:outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* UTI Score */}
+                                    <div className="bg-purple-50 p-6 rounded-2xl">
+                                        <label className="text-2xl font-semibold text-gray-800 block mb-4">
+                                            UTI Test Strip Result
+                                        </label>
+                                        <div className="flex gap-4">
+                                            <button
+                                                onClick={() => handleInputChange('utiScore', 'normal')}
+                                                className={`flex-1 py-4 px-6 text-xl font-semibold rounded-xl transition-all ${
+                                                    currentEntry.utiScore === 'normal'
+                                                        ? 'bg-green-500 text-white shadow-lg scale-105'
+                                                        : 'bg-white text-gray-700 border-2 border-gray-300 hover:border-green-400'
+                                                }`}
+                                            >
+                                                ✓ Normal
+                                            </button>
+                                            <button
+                                                onClick={() => handleInputChange('utiScore', 'elevated')}
+                                                className={`flex-1 py-4 px-6 text-xl font-semibold rounded-xl transition-all ${
+                                                    currentEntry.utiScore === 'elevated'
+                                                        ? 'bg-red-500 text-white shadow-lg scale-105'
+                                                        : 'bg-white text-gray-700 border-2 border-gray-300 hover:border-red-400'
+                                                }`}
+                                            >
+                                                ⚠ Elevated
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Water Intake */}
+                                    <div className="bg-blue-50 p-6 rounded-2xl">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <Droplet className="w-8 h-8 text-blue-500" />
+                                            <label className="text-2xl font-semibold text-gray-800">
+                                                Water in Last 24 Hours
+                                            </label>
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <input
+                                                type="number"
+                                                placeholder="Number of ounces"
+                                                value={currentEntry.waterIntake}
+                                                onChange={(e) => handleInputChange('waterIntake', e.target.value)}
+                                                className="flex-1 p-4 text-xl border-2 border-gray-300 rounded-xl focus:border-blue-400 focus:outline-none"
+                                            />
+                                            <span className="text-xl text-gray-600 self-center">ounces</span>
+                                        </div>
+                                        <p className="text-sm text-gray-600 mt-2">
+                                            Recommended: 64+ ounces per day
+                                        </p>
+                                    </div>
+
+                                    {/* Sleep Data */}
+                                    <div className="bg-indigo-50 p-6 rounded-2xl">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <Moon className="w-8 h-8 text-indigo-500" />
+                                            <label className="text-2xl font-semibold text-gray-800">
+                                                Sleep (from Fitbit)
+                                            </label>
+                                        </div>
+                                        <div className="space-y-3">
+                                            <div className="flex items-center gap-3">
+                                                <span className="w-24 text-lg font-semibold text-gray-700">Total:</span>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Hours"
+                                                    value={currentEntry.totalSleep}
+                                                    onChange={(e) => handleInputChange('totalSleep', e.target.value)}
+                                                    className="flex-1 p-3 text-lg border-2 border-gray-300 rounded-xl focus:border-indigo-400 focus:outline-none"
+                                                />
+                                                <span className="text-gray-600">hours</span>
+                                            </div>
+                                            <div className="border-t border-indigo-200 pt-3">
+                                                <p className="text-sm text-gray-600 mb-2">Sleep Stage Breakdown:</p>
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <span className="w-24 text-lg text-gray-700">Deep:</span>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Hours"
+                                                        value={currentEntry.deepSleep}
+                                                        onChange={(e) => handleInputChange('deepSleep', e.target.value)}
+                                                        className="flex-1 p-3 text-lg border-2 border-gray-300 rounded-xl focus:border-indigo-400 focus:outline-none"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <span className="w-24 text-lg text-gray-700">REM:</span>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Hours"
+                                                        value={currentEntry.remSleep}
+                                                        onChange={(e) => handleInputChange('remSleep', e.target.value)}
+                                                        className="flex-1 p-3 text-lg border-2 border-gray-300 rounded-xl focus:border-indigo-400 focus:outline-none"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="w-24 text-lg text-gray-700">Light:</span>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Hours"
+                                                        value={currentEntry.lightSleep}
+                                                        onChange={(e) => handleInputChange('lightSleep', e.target.value)}
+                                                        className="flex-1 p-3 text-lg border-2 border-gray-300 rounded-xl focus:border-indigo-400 focus:outline-none"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Heart Rate Variability (HRV) */}
+                                    <div className="bg-rose-50 p-6 rounded-2xl">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <Activity className="w-8 h-8 text-rose-500" />
+                                            <label className="text-2xl font-semibold text-gray-800">
+                                                HRV (Heart Rate Variability)
+                                            </label>
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <input
+                                                type="number"
+                                                placeholder="Milliseconds"
+                                                value={currentEntry.hrv}
+                                                onChange={(e) => handleInputChange('hrv', e.target.value)}
+                                                className="flex-1 p-4 text-xl border-2 border-gray-300 rounded-xl focus:border-rose-400 focus:outline-none"
+                                            />
+                                            <span className="text-xl text-gray-600 self-center">ms</span>
+                                        </div>
+                                        <p className="text-sm text-gray-600 mt-2">
+                                            From Fitbit or other heart rate monitor
+                                        </p>
+                                    </div>
+
+                                    {/* Meditation & Meds */}
+                                    <div className="space-y-4">
+                                        <div className="bg-green-50 p-6 rounded-2xl">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <Brain className="w-8 h-8 text-green-500" />
+                                                    <label className="text-2xl font-semibold text-gray-800">
+                                                        Did I meditate today?
+                                                    </label>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleInputChange('meditated', !currentEntry.meditated)}
+                                                    className={`w-20 h-12 rounded-full transition-all ${
+                                                        currentEntry.meditated ? 'bg-green-500' : 'bg-gray-300'
+                                                    }`}
+                                                >
+                                                    <div
+                                                        className={`w-10 h-10 bg-white rounded-full shadow-md transform transition-transform ${
+                                                            currentEntry.meditated ? 'translate-x-8' : 'translate-x-1'
+                                                        }`}
+                                                    />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-pink-50 p-6 rounded-2xl">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <Pill className="w-8 h-8 text-pink-500" />
+                                                    <label className="text-2xl font-semibold text-gray-800">
+                                                        Did I take my meds?
+                                                    </label>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleInputChange('tookMeds', !currentEntry.tookMeds)}
+                                                    className={`w-20 h-12 rounded-full transition-all ${
+                                                        currentEntry.tookMeds ? 'bg-pink-500' : 'bg-gray-300'
+                                                    }`}
+                                                >
+                                                    <div
+                                                        className={`w-10 h-10 bg-white rounded-full shadow-md transform transition-transform ${
+                                                            currentEntry.tookMeds ? 'translate-x-8' : 'translate-x-1'
+                                                        }`}
+                                                    />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Social Connection */}
+                                    <div className="bg-blue-50 p-6 rounded-2xl">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <Users className="w-8 h-8 text-blue-500" />
+                                                <label className="text-2xl font-semibold text-gray-800">
+                                                    Did I connect with someone today?
+                                                </label>
+                                            </div>
+                                            <button
+                                                onClick={() => handleInputChange('socialConnection', !currentEntry.socialConnection)}
+                                                className={`w-20 h-12 rounded-full transition-all ${
+                                                    currentEntry.socialConnection ? 'bg-blue-500' : 'bg-gray-300'
+                                                }`}
+                                            >
+                                                <div
+                                                    className={`w-10 h-10 bg-white rounded-full shadow-md transform transition-transform ${
+                                                        currentEntry.socialConnection ? 'translate-x-8' : 'translate-x-1'
+                                                    }`}
+                                                />
+                                            </button>
+                                        </div>
+                                        <p className="text-sm text-gray-600 mt-2 ml-11">
+                                            Phone call, visit, or meaningful conversation
+                                        </p>
+                                    </div>
+
+                                    {/* Bowel Movement */}
+                                    <div className="bg-amber-50 p-6 rounded-2xl">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <Heart className="w-8 h-8 text-amber-600" />
+                                                <label className="text-2xl font-semibold text-gray-800">
+                                                    Had a bowel movement today?
+                                                </label>
+                                            </div>
+                                            <button
+                                                onClick={() => handleInputChange('bowelMovement', !currentEntry.bowelMovement)}
+                                                className={`w-20 h-12 rounded-full transition-all ${
+                                                    currentEntry.bowelMovement ? 'bg-amber-500' : 'bg-gray-300'
+                                                }`}
+                                            >
+                                                <div
+                                                    className={`w-10 h-10 bg-white rounded-full shadow-md transform transition-transform ${
+                                                        currentEntry.bowelMovement ? 'translate-x-8' : 'translate-x-1'
+                                                    }`}
+                                                />
+                                            </button>
+                                        </div>
+                                        {!currentEntry.bowelMovement && entries.length > 0 && (
+                                            <p className="text-lg text-amber-700 font-semibold mt-3 ml-11">
+                                                Last movement: {getLastBowelMovementInfo()}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Time Outside */}
+                                    <div className="bg-teal-50 p-6 rounded-2xl">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <Wind className="w-8 h-8 text-teal-500" />
+                                            <label className="text-2xl font-semibold text-gray-800">
+                                                Time Outside Today
+                                            </label>
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <input
+                                                type="number"
+                                                placeholder="Minutes"
+                                                value={currentEntry.timeOutside}
+                                                onChange={(e) => handleInputChange('timeOutside', e.target.value)}
+                                                className="flex-1 p-4 text-xl border-2 border-gray-300 rounded-xl focus:border-teal-400 focus:outline-none"
+                                            />
+                                            <span className="text-xl text-gray-600 self-center">minutes</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Headache */}
+                                    <div className="bg-purple-50 p-6 rounded-2xl">
+                                        <label className="text-2xl font-semibold text-gray-800 block mb-4">
+                                            Any Headache Today?
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {['none', 'mild', 'moderate', 'severe'].map((level) => (
+                                                <button
+                                                    key={level}
+                                                    onClick={() => handleInputChange('headache', level)}
+                                                    className={`py-3 px-4 text-lg font-semibold rounded-xl transition-all ${
+                                                        currentEntry.headache === level
+                                                            ? 'bg-purple-500 text-white shadow-lg scale-105'
+                                                            : 'bg-white text-gray-700 border-2 border-gray-300 hover:border-purple-400'
+                                                    }`}
+                                                >
+                                                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Balance/Dizziness */}
+                                    <div className="bg-yellow-50 p-6 rounded-2xl">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <Zap className="w-8 h-8 text-yellow-600" />
+                                                <label className="text-2xl font-semibold text-gray-800">
+                                                    Any balance issues or dizziness?
+                                                </label>
+                                            </div>
+                                            <button
+                                                onClick={() => handleInputChange('balanceIssues', !currentEntry.balanceIssues)}
+                                                className={`w-20 h-12 rounded-full transition-all ${
+                                                    currentEntry.balanceIssues ? 'bg-yellow-500' : 'bg-gray-300'
+                                                }`}
+                                            >
+                                                <div
+                                                    className={`w-10 h-10 bg-white rounded-full shadow-md transform transition-transform ${
+                                                        currentEntry.balanceIssues ? 'translate-x-8' : 'translate-x-1'
+                                                    }`}
+                                                />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Cognitive Clarity */}
+                                    <div className="bg-indigo-50 p-6 rounded-2xl">
+                                        <label className="text-2xl font-semibold text-gray-800 block mb-4">
+                                            How Clear-Headed Do I Feel?
+                                        </label>
+                                        <div className="flex gap-3">
+                                            {['clear', 'somewhat foggy', 'very foggy'].map((level) => (
+                                                <button
+                                                    key={level}
+                                                    onClick={() => handleInputChange('cognitiveClarity', level)}
+                                                    className={`flex-1 py-3 px-4 text-lg font-semibold rounded-xl transition-all ${
+                                                        currentEntry.cognitiveClarity === level
+                                                            ? 'bg-indigo-500 text-white shadow-lg scale-105'
+                                                            : 'bg-white text-gray-700 border-2 border-gray-300 hover:border-indigo-400'
+                                                    }`}
+                                                >
+                                                    {level === 'clear' ? '😊 Clear' : level === 'somewhat foggy' ? '😐 Foggy' : '😕 Very Foggy'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Pain Level */}
+                                    <div className="bg-red-50 p-6 rounded-2xl">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <Activity className="w-8 h-8 text-red-500" />
+                                            <label className="text-2xl font-semibold text-gray-800">
+                                                Pain Level Today
+                                            </label>
+                                        </div>
+                                        <div className="flex gap-4 items-center">
+                                            <span className="text-lg text-gray-600">0</span>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="10"
+                                                value={currentEntry.painLevel || 0}
+                                                onChange={(e) => handleInputChange('painLevel', e.target.value)}
+                                                className="flex-1 h-3 bg-gray-300 rounded-lg appearance-none cursor-pointer"
+                                                style={{
+                                                    background: `linear-gradient(to right, #ef4444 0%, #f59e0b ${(currentEntry.painLevel || 0) * 10}%, #d1d5db ${(currentEntry.painLevel || 0) * 10}%, #d1d5db 100%)`
+                                                }}
+                                            />
+                                            <span className="text-lg text-gray-600">10</span>
+                                            <span className="text-2xl font-bold text-red-600 w-12 text-center">
+                                                {currentEntry.painLevel || 0}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-gray-600 mt-2 text-center">
+                                            0 = No pain, 10 = Worst pain
+                                        </p>
+                                    </div>
+
+                                    {/* Positive Activity */}
+                                    <div className="bg-emerald-50 p-6 rounded-2xl">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <Smile className="w-8 h-8 text-emerald-500" />
+                                            <label className="text-2xl font-semibold text-gray-800">
+                                                Something I Enjoyed Today
+                                            </label>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            placeholder="Reading, puzzle, show, music, etc."
+                                            value={currentEntry.positiveActivity}
+                                            onChange={(e) => handleInputChange('positiveActivity', e.target.value)}
+                                            className="w-full p-4 text-xl border-2 border-gray-300 rounded-xl focus:border-emerald-400 focus:outline-none"
+                                        />
+                                        <p className="text-sm text-gray-600 mt-2">
+                                            Even small things count!
+                                        </p>
+                                    </div>
+
+                                    {/* Submit Button */}
+                                    <button
+                                        onClick={handleSubmit}
+                                        className="w-full py-6 px-8 bg-blue-600 hover:bg-blue-700 text-white text-2xl font-bold rounded-2xl shadow-lg transition-all transform hover:scale-105 mt-8"
+                                    >
+                                        Save My Check-In
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Alert View - CRITICAL */}
+                            {currentView === 'alert' && (
+                                <div className="text-center space-y-6">
+                                    <AlertTriangle className="w-24 h-24 mx-auto text-red-600 animate-pulse" />
+                                    <h2 className="text-4xl font-bold text-red-600">IMPORTANT - HEALTH ALERT</h2>
+                                    
+                                    <div className="space-y-4">
+                                        <p className="text-2xl text-gray-800 font-semibold">
+                                            Some of your health readings need attention:
+                                        </p>
+                                        
+                                        <div className="bg-red-50 border-4 border-red-500 rounded-2xl p-6 text-left">
+                                            <p className="text-2xl font-bold text-red-700 mb-4">Concerning readings:</p>
+                                            <div className="space-y-3">
+                                                {alertConditions.bp && (
+                                                    <div className="bg-white p-4 rounded-xl border-2 border-red-400">
+                                                        <p className="text-xl text-gray-800">
+                                                            <strong>⚠ Blood Pressure:</strong> {currentEntry.bloodPressureSystolic}/
+                                                            {currentEntry.bloodPressureDiastolic}
+                                                            <span className="text-red-600 font-bold"> (Above 140/80)</span>
+                                                        </p>
+                                                        {currentEntry.mood === 'rough' && (
+                                                            <p className="text-red-600 font-semibold mt-2">
+                                                                With how you're feeling emotionally, this is especially concerning.
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                
+                                                {alertConditions.uti && (
+                                                    <div className="bg-white p-4 rounded-xl border-2 border-red-400">
+                                                        <p className="text-xl text-gray-800">
+                                                            <strong>⚠ UTI Test:</strong> 
+                                                            <span className="text-red-600 font-bold"> Elevated</span>
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                
+                                                {alertConditions.balance && (
+                                                    <div className="bg-white p-4 rounded-xl border-2 border-orange-400">
+                                                        <p className="text-xl text-gray-800">
+                                                            <strong>⚠ Balance Issues:</strong> 
+                                                            <span className="text-orange-600 font-bold"> Dizziness or balance problems reported</span>
+                                                        </p>
+                                                        <p className="text-gray-700 mt-2">
+                                                            This increases fall risk - please be careful and seek guidance.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                
+                                                {alertConditions.cognitive && (
+                                                    <div className="bg-white p-4 rounded-xl border-2 border-orange-400">
+                                                        <p className="text-xl text-gray-800">
+                                                            <strong>⚠ Mental Clarity:</strong> 
+                                                            <span className="text-orange-600 font-bold"> Feeling {currentEntry.cognitiveClarity}</span>
+                                                        </p>
+                                                        <p className="text-gray-700 mt-2">
+                                                            Confusion or fogginess should be evaluated by a healthcare provider.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                
+                                                {alertConditions.pain && (
+                                                    <div className="bg-white p-4 rounded-xl border-2 border-red-400">
+                                                        <p className="text-xl text-gray-800">
+                                                            <strong>⚠ Pain Level:</strong> 
+                                                            <span className="text-red-600 font-bold"> {currentEntry.painLevel}/10 (High)</span>
+                                                        </p>
+                                                        <p className="text-gray-700 mt-2">
+                                                            Pain above 5 should be addressed with your care team.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                
+                                                {alertConditions.dehydration && (
+                                                    <div className="bg-white p-4 rounded-xl border-2 border-blue-400">
+                                                        <p className="text-xl text-gray-800">
+                                                            <strong>⚠ Dehydration Risk:</strong> 
+                                                            <span className="text-blue-600 font-bold"> Only {currentEntry.waterIntake} ounces today</span>
+                                                        </p>
+                                                        <p className="text-gray-700 mt-2">
+                                                            Low water intake can cause headaches, dizziness, confusion, and elevated blood pressure. Please drink more water and consult your doctor if symptoms persist.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <p className="text-xl text-gray-700 font-semibold mt-6">
+                                            Please reach out for help right away.
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-4 mt-8">
+                                        <a
+                                            href="tel:911"
+                                            className="flex items-center justify-center gap-3 w-full py-6 px-8 bg-red-700 hover:bg-red-800 text-white text-2xl font-bold rounded-2xl shadow-lg transition-all transform hover:scale-105 border-4 border-red-900"
+                                        >
+                                            <Phone className="w-8 h-8" />
+                                            🚨 Call 911 - Emergency
+                                        </a>
+                                        <a
+                                            href="tel:DOCTOR_PHONE_NUMBER"
+                                            className="flex items-center justify-center gap-3 w-full py-6 px-8 bg-red-600 hover:bg-red-700 text-white text-2xl font-bold rounded-2xl shadow-lg transition-all transform hover:scale-105"
+                                        >
+                                            <Phone className="w-8 h-8" />
+                                            Call Doctor Now
+                                        </a>
+                                        <a
+                                            href="tel:FAMILY_PHONE_NUMBER"
+                                            className="flex items-center justify-center gap-3 w-full py-6 px-8 bg-blue-600 hover:bg-blue-700 text-white text-2xl font-bold rounded-2xl shadow-lg transition-all transform hover:scale-105"
+                                        >
+                                            <Phone className="w-8 h-8" />
+                                            Call Family Member
+                                        </a>
+                                        <button
+                                            onClick={handleAlertAcknowledge}
+                                            className="w-full py-4 px-8 bg-gray-400 hover:bg-gray-500 text-white text-lg rounded-xl transition-all mt-6"
+                                        >
+                                            I will call - Save my check-in
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Success View */}
+                            {currentView === 'success' && (
+                                <div className="text-center space-y-6">
+                                    <div className="text-8xl mb-4">✅</div>
+                                    <h2 className="text-4xl font-bold text-gray-800">Great job!</h2>
+                                    <p className="text-2xl text-gray-600">Your check-in has been saved</p>
+                                </div>
+                            )}
+
+                            {/* History View */}
+                            {currentView === 'history' && (
+                                <div className="space-y-6">
+                                    <h2 className="text-3xl font-bold text-gray-800 mb-6">My Check-In History</h2>
+                                    <div className="space-y-4 max-h-96 overflow-y-auto">
+                                        {entries.map((entry, index) => (
+                                            <div key={index} className="bg-gray-50 p-6 rounded-xl border-2 border-gray-200">
+                                                <div className="flex justify-between items-start mb-4">
+                                                    <span className="text-lg font-semibold text-gray-700">
+                                                        {formatDate(entry.date)}
+                                                    </span>
+                                                    <span
+                                                        className={`px-4 py-1 rounded-full text-white text-sm font-semibold ${
+                                                            entry.mood === 'good'
+                                                                ? 'bg-green-500'
+                                                                : entry.mood === 'okay'
+                                                                ? 'bg-yellow-400'
+                                                                : 'bg-orange-500'
+                                                        }`}
+                                                    >
+                                                        {entry.mood === 'good'
+                                                            ? 'Good'
+                                                            : entry.mood === 'okay'
+                                                            ? 'Okay'
+                                                            : 'Rough Day'}
+                                                    </span>
+                                                </div>
+                                                {entry.mood === 'rough' && (
+                                                    <div className="text-gray-700 space-y-2 text-sm">
+                                                        {entry.bloodPressureSystolic && (
+                                                            <p className={
+                                                                parseInt(entry.bloodPressureSystolic) > 140 || 
+                                                                parseInt(entry.bloodPressureDiastolic) > 80
+                                                                    ? 'text-red-600 font-semibold'
+                                                                    : ''
+                                                            }>
+                                                                <strong>BP:</strong> {entry.bloodPressureSystolic}/
+                                                                {entry.bloodPressureDiastolic}
+                                                                {(parseInt(entry.bloodPressureSystolic) > 140 || 
+                                                                    parseInt(entry.bloodPressureDiastolic) > 80) && ' ⚠ High'}
+                                                            </p>
+                                                        )}
+                                                        {entry.utiScore && (
+                                                            <p className={entry.utiScore === 'elevated' ? 'text-red-600 font-semibold' : ''}>
+                                                                <strong>UTI:</strong> {entry.utiScore === 'elevated' ? 'Elevated ⚠' : 'Normal ✓'}
+                                                            </p>
+                                                        )}
+                                                        {entry.waterIntake && (
+                                                            <p className={parseInt(entry.waterIntake) < 60 ? 'text-blue-600 font-semibold' : ''}>
+                                                                <strong>Water:</strong> {entry.waterIntake} ounces
+                                                                {parseInt(entry.waterIntake) < 60 && ' ⚠ Low'}
+                                                            </p>
+                                                        )}
+                                                        {entry.totalSleep && (
+                                                            <p>
+                                                                <strong>Total Sleep:</strong> {entry.totalSleep} hours
+                                                            </p>
+                                                        )}
+                                                        {(entry.deepSleep || entry.remSleep || entry.lightSleep) && (
+                                                            <p className="text-sm">
+                                                                <strong>Sleep Breakdown:</strong> Deep: {entry.deepSleep || '0'}, REM:{' '}
+                                                                {entry.remSleep || '0'}, Light: {entry.lightSleep || '0'}
+                                                            </p>
+                                                        )}
+                                                        {entry.hrv && (
+                                                            <p>
+                                                                <strong>HRV:</strong> {entry.hrv} ms
+                                                            </p>
+                                                        )}
+                                                        <p>
+                                                            <strong>Meditated:</strong> {entry.meditated ? 'Yes ✓' : 'No'}
+                                                        </p>
+                                                        <p>
+                                                            <strong>Took Meds:</strong> {entry.tookMeds ? 'Yes ✓' : 'No'}
+                                                        </p>
+                                                        <p>
+                                                            <strong>Social Connection:</strong> {entry.socialConnection ? 'Yes ✓' : 'No'}
+                                                        </p>
+                                                        <p>
+                                                            <strong>Bowel Movement:</strong> {entry.bowelMovement ? 'Yes ✓' : 'No'}
+                                                        </p>
+                                                        {entry.timeOutside && (
+                                                            <p>
+                                                                <strong>Time Outside:</strong> {entry.timeOutside} minutes
+                                                            </p>
+                                                        )}
+                                                        {entry.headache && entry.headache !== 'none' && (
+                                                            <p className={entry.headache === 'severe' || entry.headache === 'moderate' ? 'text-orange-600 font-semibold' : ''}>
+                                                                <strong>Headache:</strong> {entry.headache.charAt(0).toUpperCase() + entry.headache.slice(1)}
+                                                                {(entry.headache === 'severe' || entry.headache === 'moderate') && ' ⚠'}
+                                                            </p>
+                                                        )}
+                                                        {entry.balanceIssues && (
+                                                            <p className="text-orange-600 font-semibold">
+                                                                <strong>Balance Issues:</strong> Yes ⚠
+                                                            </p>
+                                                        )}
+                                                        {entry.cognitiveClarity && entry.cognitiveClarity !== 'clear' && (
+                                                            <p className={entry.cognitiveClarity === 'very foggy' ? 'text-orange-600 font-semibold' : ''}>
+                                                                <strong>Mental Clarity:</strong> {entry.cognitiveClarity.charAt(0).toUpperCase() + entry.cognitiveClarity.slice(1)}
+                                                            </p>
+                                                        )}
+                                                        {entry.painLevel && parseInt(entry.painLevel) > 0 && (
+                                                            <p className={parseInt(entry.painLevel) >= 7 ? 'text-red-600 font-semibold' : ''}>
+                                                                <strong>Pain Level:</strong> {entry.painLevel}/10
+                                                                {parseInt(entry.painLevel) >= 7 && ' ⚠'}
+                                                            </p>
+                                                        )}
+                                                        {entry.positiveActivity && (
+                                                            <p className="text-emerald-600">
+                                                                <strong>Enjoyed:</strong> {entry.positiveActivity} ✨
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => setCurrentView('mood')}
+                                        className="w-full py-4 px-8 bg-blue-600 hover:bg-blue-700 text-white text-xl font-bold rounded-2xl shadow-lg transition-all"
+                                    >
+                                        Back to Check-In
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        
+                        {/* Footer */}
+                        <div className="text-center mt-6">
+                            <p className="text-sm text-gray-500">
+                                Powered by <span className="font-semibold text-gray-700">Daily Check In</span> • dailycheckin.care
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render the app
+        const root = createRoot(document.getElementById('root'));
+        root.render(<HealthTracker />);
+    </script>
+</body>
+</html>
