@@ -161,32 +161,48 @@
 
             // Function to save an entry to Zapier (which sends to Google Sheets)
             const saveEntryToSheets = async (entry) => {
+                console.log('🚀 Attempting to send data to Zapier:', entry);
+                console.log('🔗 Webhook URL:', ZAPIER_WEBHOOK_URL);
+                
                 if (ZAPIER_WEBHOOK_URL === 'YOUR_ZAPIER_WEBHOOK_URL_HERE') {
-                    console.log('Zapier webhook not configured');
-                    // Still save locally for history
-                    const updatedEntries = [...entries, entry];
-                    setEntries(updatedEntries);
-                    localStorage.setItem('healthTrackerEntries', JSON.stringify(updatedEntries));
+                    console.log('❌ Zapier webhook not configured');
+                    alert('Zapier webhook URL not set up!');
                     return;
                 }
 
                 try {
-                    // Zapier webhooks accept simple JSON - no action/entry wrapper needed
+                    // Send to Zapier with proper headers
                     const response = await fetch(ZAPIER_WEBHOOK_URL, {
                         method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
                         body: JSON.stringify(entry),
                     });
 
+                    console.log('📡 Zapier response status:', response.status);
+                    
                     if (response.ok || response.status === 200) {
-                        console.log('Entry saved successfully to Google Sheets via Zapier');
+                        console.log('✅ Entry saved successfully to Zapier/Google Sheets!');
                         
                         // Also save locally for history view
                         const updatedEntries = [...entries, entry];
                         setEntries(updatedEntries);
                         localStorage.setItem('healthTrackerEntries', JSON.stringify(updatedEntries));
+                    } else {
+                        console.error('❌ Zapier returned error status:', response.status);
+                        const errorText = await response.text();
+                        console.error('Error details:', errorText);
+                        
+                        // Still save locally
+                        const updatedEntries = [...entries, entry];
+                        setEntries(updatedEntries);
+                        localStorage.setItem('healthTrackerEntries', JSON.stringify(updatedEntries));
                     }
                 } catch (error) {
-                    console.error('Error saving entry:', error);
+                    console.error('❌ Error sending to Zapier:', error);
+                    console.error('Error details:', error.message);
+                    
                     // Still save locally even if Zapier fails
                     const updatedEntries = [...entries, entry];
                     setEntries(updatedEntries);
@@ -195,14 +211,20 @@
             };
 
             const handleMoodSelection = (mood) => {
-                const newEntry = { ...currentEntry, mood, date: new Date().toISOString() };
-                setCurrentEntry(newEntry);
-                
                 if (mood === 'rough') {
+                    // For rough days, show the full tracking form
+                    const newEntry = { ...currentEntry, mood, date: new Date().toISOString() };
+                    setCurrentEntry(newEntry);
                     setCurrentView('tracking');
                 } else {
-                    // Save entry (includes local storage)
-                    saveEntryToSheets(newEntry);
+                    // For good/okay days, ONLY send date and mood (no other fields!)
+                    const simpleEntry = {
+                        date: new Date().toISOString(),
+                        mood: mood
+                    };
+                    
+                    // Save to Zapier (only date and mood - other columns will be blank)
+                    saveEntryToSheets(simpleEntry);
                     
                     setCurrentView('success');
                     setTimeout(() => {
