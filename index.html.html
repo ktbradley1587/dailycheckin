@@ -90,8 +90,9 @@
         const { useState, useEffect } = React;
         const { createRoot } = ReactDOM;
 
-        // Zapier URL - ALREADY CONFIGUREDc';
-        const Zapier Catch Hooks URL = 'https://hooks.zapier.com/hooks/catch/22879465/uinsing/'
+        // Zapier Webhook URL - CONFIGURED
+        const ZAPIER_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/22879465/uinsing/';
+
         // Lucide Icons Component Wrappers
         const Icon = ({ name, ...props }) => {
             useEffect(() => {
@@ -149,70 +150,58 @@
                 positiveActivity: '',
             });
 
-            // Load data from Google Sheets when component mounts
+            // Load data from localStorage (Zapier can't send data back, only receive)
             useEffect(() => {
-                loadEntriesFromSheets();
+                const savedEntries = localStorage.getItem('healthTrackerEntries');
+                if (savedEntries) {
+                    setEntries(JSON.parse(savedEntries));
+                }
+                setIsLoading(false);
             }, []);
 
-            // Function to load all entries from Google Sheets
-            const loadEntriesFromSheets = async () => {
-                try {
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            action: 'load'
-                        }),
-                    });
-
-                    const data = await response.json();
-                    
-                    if (data.status === 'success' && data.entries) {
-                        setEntries(data.entries);
-                    }
-                } catch (error) {
-                    console.error('Error loading entries:', error);
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-
-            // Function to save an entry to Google Sheets
+            // Function to save an entry to Zapier (which sends to Google Sheets)
             const saveEntryToSheets = async (entry) => {
+                if (ZAPIER_WEBHOOK_URL === 'YOUR_ZAPIER_WEBHOOK_URL_HERE') {
+                    console.log('Zapier webhook not configured');
+                    // Still save locally for history
+                    const updatedEntries = [...entries, entry];
+                    setEntries(updatedEntries);
+                    localStorage.setItem('healthTrackerEntries', JSON.stringify(updatedEntries));
+                    return;
+                }
+
                 try {
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    // Zapier webhooks accept simple JSON - no action/entry wrapper needed
+                    const response = await fetch(ZAPIER_WEBHOOK_URL, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            action: 'save',
-                            entry: entry
-                        }),
+                        body: JSON.stringify(entry),
                     });
 
-                    const data = await response.json();
-                    
-                    if (data.status === 'success') {
-                        console.log('Entry saved successfully');
+                    if (response.ok || response.status === 200) {
+                        console.log('Entry saved successfully to Google Sheets via Zapier');
+                        
+                        // Also save locally for history view
+                        const updatedEntries = [...entries, entry];
+                        setEntries(updatedEntries);
+                        localStorage.setItem('healthTrackerEntries', JSON.stringify(updatedEntries));
                     }
                 } catch (error) {
                     console.error('Error saving entry:', error);
+                    // Still save locally even if Zapier fails
+                    const updatedEntries = [...entries, entry];
+                    setEntries(updatedEntries);
+                    localStorage.setItem('healthTrackerEntries', JSON.stringify(updatedEntries));
                 }
             };
 
             const handleMoodSelection = (mood) => {
-                setCurrentEntry({ ...currentEntry, mood });
+                const newEntry = { ...currentEntry, mood, date: new Date().toISOString() };
+                setCurrentEntry(newEntry);
+                
                 if (mood === 'rough') {
                     setCurrentView('tracking');
                 } else {
-                    // Save simple entry and show success
-                    const newEntry = { ...currentEntry, mood };
-                    setEntries([...entries, newEntry]);
-                    
-                    // Save to Google Sheets
+                    // Save entry (includes local storage)
                     saveEntryToSheets(newEntry);
                     
                     setCurrentView('success');
@@ -269,14 +258,13 @@
             };
 
             const handleSubmit = () => {
+                const entryToSave = { ...currentEntry, date: new Date().toISOString() };
+                
                 if (checkHealthAlerts()) {
                     setCurrentView('alert');
                 } else {
-                    const updatedEntries = [...entries, currentEntry];
-                    setEntries(updatedEntries);
-                    
-                    // Save to Google Sheets
-                    saveEntryToSheets(currentEntry);
+                    // Save to Zapier/Google Sheets (includes local storage)
+                    saveEntryToSheets(entryToSave);
                     
                     setCurrentView('success');
                     setTimeout(() => {
@@ -286,12 +274,10 @@
             };
 
             const handleAlertAcknowledge = () => {
-                // Save the entry even with alerts
-                const updatedEntries = [...entries, currentEntry];
-                setEntries(updatedEntries);
+                const entryToSave = { ...currentEntry, date: new Date().toISOString() };
                 
-                // Save to Google Sheets
-                saveEntryToSheets(currentEntry);
+                // Save the entry even with alerts
+                saveEntryToSheets(entryToSave);
                 
                 setCurrentView('success');
                 setTimeout(() => {
