@@ -171,12 +171,9 @@
                 }
 
                 try {
-                    // Send to Zapier with proper headers
+                    // Send to Zapier WITHOUT headers to avoid CORS preflight
                     const response = await fetch(ZAPIER_WEBHOOK_URL, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
                         body: JSON.stringify(entry),
                     });
 
